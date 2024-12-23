@@ -1,0 +1,40 @@
+stages:
+  - build
+  - deploy
+
+build_job:
+  stage: build
+  image: python:3.11-slim-buster 
+  services:
+    - docker:dind 
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - pip install --upgrade pip
+    - pip install -r python/requirements.txt
+  script:
+    - docker build -t app:latest .
+    - docker push egorbryazgin/my-python-app:latest 
+  artifacts:
+    paths:
+      - . 
+
+deploy_job:
+  stage: deploy
+  image: ubuntu:latest
+  variables:
+    SSH_PRIVATE_KEY: $PRIVATE_KEY 
+    SSH_HOST: 192.168.1.6 
+    SSH_USER: osboxes 
+  before_script:
+    - apt-get update && apt-get install -y openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan $SSH_HOST >> ~/.ssh/known_hosts
+  script:
+    - ssh $SSH_USER@$SSH_HOST "docker stop app || true" 
+    - ssh $SSH_USER@$SSH_HOST "docker rm app || true" 
+    - ssh $SSH_USER@$SSH_HOST "docker pull egorbryazgin/app:latest" 
+    - ssh $SSH_USER@$SSH_HOST "docker run -d -p 5000:5000 --name app egorbryazgin/my-python-app:latest"  
+  environment:
+    name: production 
